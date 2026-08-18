@@ -29,7 +29,7 @@ $(KERNEL): $(OBJ)
 iso: $(KERNEL)
 	mkdir -p iso_root/boot/limine
 	cp $(KERNEL) iso_root/boot/kernel.elf
-	cp limine.conf iso_root/boot/limine/
+	cp limine.cfg iso_root/boot/limine/
 	cp limine/limine-bios.sys limine/limine-bios-cd.bin limine/limine-uefi-cd.bin iso_root/boot/limine/
 	mkdir -p iso_root/EFI/BOOT
 	cp limine/BOOTX64.EFI iso_root/EFI/BOOT/

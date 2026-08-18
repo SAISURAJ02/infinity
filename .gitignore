@@ -6,3 +6,5 @@ build/
 isodir/
 *.img
 limine/
+iso_root/
+*.iso
