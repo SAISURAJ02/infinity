@@ -1,17 +1,17 @@
-# Infinity OS Makefile
-
 TARGET = x86_64-elf
 CC = $(TARGET)-gcc
 LD = $(TARGET)-gcc
+AS = nasm
 
 CFLAGS = -ffreestanding -fno-stack-protector -fno-stack-check -fno-pic \
          -m64 -march=x86-64 -mno-80387 -mno-mmx -mno-sse -mno-sse2 \
          -mno-red-zone -mcmodel=kernel -Ikernel/src -Wall -Wextra
 
+ASFLAGS = -f elf64
+
 LDFLAGS = -T linker.ld -ffreestanding -nostdlib -static -m64 -mcmodel=kernel
 
-SRC = kernel/src/kernel.c
-OBJ = kernel/src/kernel.o
+OBJS = kernel/src/kernel.o kernel/src/gdt.o kernel/src/gdt_flush.o
 
 KERNEL = kernel/kernel.elf
 ISO = infinity.iso
@@ -20,11 +20,14 @@ ISO = infinity.iso
 
 all: $(KERNEL)
 
-kernel/src/kernel.o: kernel/src/kernel.c
+kernel/src/%.o: kernel/src/%.c
 	$(CC) -c $< -o $@ $(CFLAGS)
 
-$(KERNEL): $(OBJ)
-	$(LD) $(LDFLAGS) -o $(KERNEL) $(OBJ)
+kernel/src/%.o: kernel/src/%.asm
+	$(AS) $(ASFLAGS) $< -o $@
+
+$(KERNEL): $(OBJS)
+	$(LD) $(LDFLAGS) -o $(KERNEL) $(OBJS)
 
 iso: $(KERNEL)
 	mkdir -p iso_root/boot/limine

@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "limine.h"
+#include "gdt.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -14,6 +15,8 @@ static void hcf(void) {
 }
 
 void kernel_main(void) {
+    gdt_init();
+
     if (framebuffer_request.response == NULL ||
         framebuffer_request.response->framebuffer_count < 1) {
         hcf();
