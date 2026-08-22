@@ -1,5 +1,6 @@
 #include "idt.h"
 #include "pic.h"
+#include "io.h"
 
 // One IDT entry, packed exactly as the CPU expects it (64-bit mode format)
 struct idt_entry {
@@ -39,10 +40,16 @@ void isr_handler(struct registers *regs) {
     isr_screen_halt(color);
 }
 void irq_handler(struct registers *regs) {
-    // regs->int_no will be 32 for the timer, for now
+    if (regs->int_no == 33) {
+        uint8_t scancode = inb(0x60);
+        if (!(scancode & 0x80)) {
+            // key press — toggle a small indicator pixel, without halting,
+            // so the kernel keeps running normally after every keystroke
+            keyboard_flash();
+        }
+    }
     pic_send_eoi(regs->int_no - 32);
 }
-
 
 static struct idt_entry idt[256];
 static struct idt_ptr   idtp;
@@ -55,6 +62,8 @@ extern void isr6(void);   // invalid opcode
 extern void isr13(void);  // general protection fault
 extern void isr14(void);  // page fault
 extern void irq0(void);
+extern void irq1(void);
+extern void keyboard_flash(void);
 
 static void idt_set_entry(int n, uint64_t handler, uint16_t selector, uint8_t type_attr) {
     idt[n].offset_low  = handler & 0xFFFF;
@@ -76,6 +85,7 @@ void idt_init(void) {
     idt_set_entry(13, (uint64_t)isr13, 0x08, 0x8E);
     idt_set_entry(14, (uint64_t)isr14, 0x08, 0x8E);
     idt_set_entry(32, (uint64_t)irq0, 0x08, 0x8E);
+    idt_set_entry(33, (uint64_t)irq1, 0x08, 0x8E);
 
     idt_load((uint64_t)&idtp);
 }

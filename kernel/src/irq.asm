@@ -8,6 +8,13 @@ irq0:
     push qword 0      ; dummy error code, for consistent stack layout
     push qword 32      ; interrupt number (IDT entry 32 = remapped IRQ0/timer)
     jmp irq_common_stub
+    
+global irq1
+
+irq1:
+    push qword 0
+    push qword 33      ; interrupt number (IDT entry 33 = remapped IRQ1/keyboard)
+    jmp irq_common_stub
 
 irq_common_stub:
     push rax
