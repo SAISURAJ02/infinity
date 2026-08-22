@@ -3,6 +3,7 @@
 #include "limine.h"
 #include "gdt.h"
 #include "idt.h"
+#include "pic.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -29,6 +30,8 @@ void isr_screen_halt(uint32_t color) {
 void kernel_main(void) {
     gdt_init();
     idt_init();
+    pic_remap();
+    __asm__ volatile ("sti");
 
     if (framebuffer_request.response == NULL ||
         framebuffer_request.response->framebuffer_count < 1) {
