@@ -5,7 +5,7 @@
 #include "idt.h"
 #include "pic.h"
 #include "io.h"
-
+#include "pmm.h"
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
     .revision = 0
@@ -50,6 +50,9 @@ void kernel_main(void) {
     outb(0x21, inb(0x21) & ~0b00000011);
 
     __asm__ volatile ("sti");
+
+    pmm_init();
+
     if (framebuffer_request.response == NULL ||
         framebuffer_request.response->framebuffer_count < 1) {
         hcf();
