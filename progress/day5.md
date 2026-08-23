@@ -7,7 +7,7 @@
 
 ## 1. Recap / Starting Point
 
-Month 1 fully complete (boot, GDT, IDT, PIC/hardware interrupts). Month 2's first piece, the Physical Memory Manager (bitmap-based frame allocator using Limine's memory map), was completed and tested in the previous session. Today's focus: paging / virtual memory — the next layer in Month 2.
+Completed (boot, GDT, IDT, PIC/hardware interrupts). Month 2's first piece, the Physical Memory Manager (bitmap-based frame allocator using Limine's memory map), was completed and tested in the previous session. Today's focus: paging / virtual memory — the next layer in Month 2.
 
 ---
 
