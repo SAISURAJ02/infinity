@@ -1,4 +1,4 @@
-# Infinity OS — Day 5
+# Infinity OS — Day 4
 
 **Date:** August 22, 2026
 **Focus:** Finishing PIC/hardware interrupts, keyboard driver
