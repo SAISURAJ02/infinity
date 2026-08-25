@@ -32,4 +32,6 @@ SECTIONS
         *(COMMON)
         *(.bss .bss.*)
     } :data
+
+    kernel_end = .;
 }
