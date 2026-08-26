@@ -24,6 +24,11 @@ static int bitmap_test(uint64_t frame) {
     return bitmap[frame / 8] & (1 << (frame % 8));
 }
 
+
+uint64_t pmm_get_highest_addr(void) {
+    return highest_addr;
+}
+
 void pmm_init(void) {
     struct limine_memmap_response *memmap = memmap_request.response;
 
