@@ -1,7 +1,7 @@
 # Infinity OS — Day 8
 
 **Date:** August 27, 2026
-**Focus:** Kernel heap allocator (kmalloc/kfree) — design, implementation, and a genuinely important bug fix
+**Focus:** Kernel heap allocator (kmalloc/kfree) — design, implementation, and a genuinely important bug fix.
 
 ---
 
