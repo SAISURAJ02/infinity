@@ -27,8 +27,10 @@ void heap_init(void) {
     heap_start->next = NULL;
 }
 void *kmalloc(size_t size) {
-    struct block_header *current = heap_start;
+    if (size == 0) return NULL;
+    size = (size + 7) & ~7ULL; // round up to 8-byte alignment
 
+    struct block_header *current = heap_start;
     while (current != NULL) {
         if (current->free == 1 && current->size >= size) {
             // If this block is significantly bigger than needed, split it:

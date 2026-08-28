@@ -2,6 +2,7 @@
 #include "pmm.h"
 #include "heap.h"
 #include <stddef.h>
+#include "pic.h"
 
 static uint64_t next_pid = 1;
 static struct process *process_list = NULL;
@@ -48,6 +49,12 @@ struct process *process_create(void (*entry_point)(void)) {
     *(--stack_top) = 0x202;                   // rflags (interrupts enabled)
     *(--stack_top) = 0x08;                    // cs (kernel code segment)
     *(--stack_top) = (uint64_t)entry_point;   // rip — where execution begins!
+
+    // Dummy int_no/err_code, matching what irq0's real entry pushes —
+    // irq0_stub's epilogue always skips 16 bytes here before iretq.
+    *(--stack_top) = 32;                      // dummy int_no
+    *(--stack_top) = 0;                       // dummy err_code
+
     // 15 general-purpose registers, all zero for a fresh process
     for (int i = 0; i < 15; i++) {
         *(--stack_top) = 0;
@@ -85,4 +92,28 @@ void scheduler_run_next(void) {
         prev->state = PROCESS_READY;
         context_switch(&prev->rsp, current_process->rsp);
     }
+}
+// Called from irq0_stub on every timer tick. Given the interrupted
+// process's saved RSP, saves it, advances to the next process, sends
+// the PIC EOI, and returns the RSP to resume.
+uint64_t schedule(uint64_t current_rsp) {
+    if (current_process != NULL) {
+        current_process->rsp = current_rsp;
+        current_process->state = PROCESS_READY;
+    }
+
+    if (process_list == NULL) {
+        return current_rsp; // no processes to schedule, just resume as-is
+    }
+
+    current_process = (current_process != NULL && current_process->next != NULL)
+                       ? current_process->next
+                       : process_list;
+
+    current_process->state = PROCESS_RUNNING;
+
+    // Acknowledge the timer interrupt (IRQ0), same as before.
+    pic_send_eoi(0);
+
+    return current_process->rsp;
 }

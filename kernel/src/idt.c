@@ -40,6 +40,9 @@ void isr_handler(struct registers *regs) {
     }
     isr_screen_halt(color);
 }
+// Handles all non-timer hardware interrupts (currently just IRQ1/keyboard —
+// the timer/IRQ0 now routes through irq0_stub -> schedule() directly,
+// since preemptive scheduling needs to happen at the assembly level).
 void irq_handler(struct registers *regs) {
     if (regs->int_no == 33) {
         uint8_t scancode = inb(0x60);

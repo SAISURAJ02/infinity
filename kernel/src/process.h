@@ -22,6 +22,7 @@ struct process {
 
     struct process *next;         // simple linked list of all processes, for the scheduler
 };
+uint64_t schedule(uint64_t current_rsp);
 
 void process_init(void);
 struct process *process_create(void (*entry_point)(void));

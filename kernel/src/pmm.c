@@ -73,11 +73,17 @@ void pmm_init(void) {
 
     // Finally, re-mark the bitmap's own storage as used, so nothing
     // allocates over it later.
+    // Finally, re-mark the bitmap's own storage as used, so nothing
+    // allocates over it later.
     uint64_t bitmap_start_frame = (uint64_t)bitmap / FRAME_SIZE;
     uint64_t bitmap_frame_count = (bitmap_size + FRAME_SIZE - 1) / FRAME_SIZE;
     for (uint64_t f = 0; f < bitmap_frame_count; f++) {
         bitmap_set(bitmap_start_frame + f);
     }
+
+    // Reserve frame 0 so pmm_alloc_frame() never returns physical address
+    // 0x0, which callers correctly treat as NULL/failure.
+    bitmap_set(0);
 }
 void *pmm_alloc_frame(void) {
     for (uint64_t i = 0; i < total_frames; i++) {
