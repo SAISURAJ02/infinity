@@ -8,6 +8,7 @@
 #include "pmm.h"
 #include "paging.h"
 #include "heap.h"
+#include "text.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -16,11 +17,10 @@ static volatile struct limine_framebuffer_request framebuffer_request = {
 
 // Captured BEFORE the CR3 switch, since Limine's response structures
 // themselves are not guaranteed to be mapped after we switch page tables.
-static uint32_t *g_fb_ptr;
-static uint64_t  g_fb_width;
-static uint64_t  g_fb_height;
-static uint64_t  g_fb_pitch;
-
+uint32_t *g_fb_ptr;
+uint64_t  g_fb_width;
+uint64_t  g_fb_height;
+uint64_t  g_fb_pitch;
 static void hcf(void) {
     for (;;) {
         __asm__ volatile ("hlt");
@@ -53,6 +53,8 @@ static void kernel_post_paging(void) {
     __asm__ volatile ("sti");
 
     heap_init();
+
+    draw_string("1234ABCD", 50, 20, 0xFFFFFFFF); // white text near the top
 
     for (uint64_t y = 50; y < 250; y++) {
         for (uint64_t x = 50; x < 250; x++) {
