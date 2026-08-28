@@ -9,6 +9,7 @@
 #include "paging.h"
 #include "heap.h"
 #include "text.h"
+#include "process.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -49,6 +50,27 @@ void keyboard_flash(void) {
 // Runs AFTER the CR3 switch, on our own dedicated stack.
 // Uses only the pre-captured g_fb_* globals — never touches
 // framebuffer_request again, since it's unmapped under our new tables.
+// Test process 1: fills a small box with blue, forever.
+static void test_process_1(void) {
+    for (;;) {
+        for (uint32_t y = 300; y < 320; y++) {
+            for (uint32_t x = 50; x < 70; x++) {
+                g_fb_ptr[y * (g_fb_pitch / 4) + x] = 0x000000FF; // blue
+            }
+        }
+    }
+}
+
+// Test process 2: fills a different small box with magenta, forever.
+static void test_process_2(void) {
+    for (;;) {
+        for (uint32_t y = 300; y < 320; y++) {
+            for (uint32_t x = 100; x < 120; x++) {
+                g_fb_ptr[y * (g_fb_pitch / 4) + x] = 0x00FF00FF; // magenta
+            }
+        }
+    }
+}
 static void kernel_post_paging(void) {
     __asm__ volatile ("sti");
 
@@ -62,9 +84,15 @@ static void kernel_post_paging(void) {
         }
     }
 
+    process_init();
+    process_create(test_process_1);
+    process_create(test_process_2);
+    scheduler_run_next(); // jumps into a process and NEVER RETURNS here
+
+    // Unreachable — scheduler_run_next() permanently transfers control
+    // into a process via iretq and never returns to this function.
     hcf();
 }
-
 void kernel_main(void) {
     gdt_init();
     idt_init();
