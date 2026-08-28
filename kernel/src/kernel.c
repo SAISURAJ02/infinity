@@ -7,6 +7,7 @@
 #include "io.h"
 #include "pmm.h"
 #include "paging.h"
+#include "heap.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -50,6 +51,8 @@ void keyboard_flash(void) {
 // framebuffer_request again, since it's unmapped under our new tables.
 static void kernel_post_paging(void) {
     __asm__ volatile ("sti");
+
+    heap_init();
 
     for (uint64_t y = 50; y < 250; y++) {
         for (uint64_t x = 50; x < 250; x++) {
