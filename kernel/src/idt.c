@@ -25,6 +25,7 @@ struct registers {
 };
 
 extern void isr_screen_halt(uint32_t color); // defined in kernel.c
+extern void keyboard_flash(void);            // defined in kernel.c
 
 void isr_handler(struct registers *regs) {
     // Different color per exception, so a crash is visually identifiable
@@ -63,8 +64,6 @@ extern void isr13(void);  // general protection fault
 extern void isr14(void);  // page fault
 extern void irq0(void);
 extern void irq1(void);
-extern void keyboard_flash(void);
-
 static void idt_set_entry(int n, uint64_t handler, uint16_t selector, uint8_t type_attr) {
     idt[n].offset_low  = handler & 0xFFFF;
     idt[n].offset_mid  = (handler >> 16) & 0xFFFF;
