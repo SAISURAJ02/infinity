@@ -11,7 +11,7 @@ ASFLAGS = -f elf64
 
 LDFLAGS = -T linker.ld -ffreestanding -nostdlib -static -m64 -mcmodel=kernel
 
-OBJS = kernel/src/kernel.o kernel/src/gdt.o kernel/src/gdt_flush.o kernel/src/idt.o kernel/src/isr.o kernel/src/idt_load.o kernel/src/pic.o kernel/src/irq.o kernel/src/pmm.o kernel/src/paging.o kernel/src/paging_load.o kernel/src/heap.o kernel/src/font.o kernel/src/text.o kernel/src/process.o kernel/src/context_switch.o
+OBJS = kernel/src/kernel.o kernel/src/gdt.o kernel/src/gdt_flush.o kernel/src/idt.o kernel/src/isr.o kernel/src/idt_load.o kernel/src/pic.o kernel/src/irq.o kernel/src/pmm.o kernel/src/paging.o kernel/src/paging_load.o kernel/src/heap.o kernel/src/font.o kernel/src/text.o kernel/src/process.o kernel/src/context_switch.o kernel/src/syscall.o kernel/src/syscall_entry.o
 
 KERNEL = kernel/kernel.elf
 ISO = infinity.iso

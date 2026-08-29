@@ -1,7 +1,7 @@
 #include "idt.h"
 #include "pic.h"
 #include "io.h"
-
+#include "syscall.h"
 // One IDT entry, packed exactly as the CPU expects it (64-bit mode format)
 struct idt_entry {
     uint16_t offset_low;    // handler address, bits 0-15
@@ -88,6 +88,10 @@ void idt_init(void) {
     idt_set_entry(14, (uint64_t)isr14, 0x08, 0x8E);
     idt_set_entry(32, (uint64_t)irq0, 0x08, 0x8E);
     idt_set_entry(33, (uint64_t)irq1, 0x08, 0x8E);
+
+    // 0xEE = present, ring 3 (DPL=3), 64-bit interrupt gate —
+    // this is the ONLY entry ring-3 code is allowed to trigger via `int`.
+    idt_set_entry(0x80, (uint64_t)syscall_entry, 0x08, 0xEE);
 
     idt_load((uint64_t)&idtp);
 }

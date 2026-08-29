@@ -46,12 +46,25 @@ void keyboard_flash(void) {
     }
     toggle = (toggle == 0x0000FF00) ? 0x000000FF : 0x0000FF00;
 }
-
+static inline uint64_t do_syscall(uint64_t syscall_number) {
+    uint64_t result;
+    __asm__ volatile (
+        "mov %1, %%rax\n"
+        "int $0x80\n"
+        "mov %%rax, %0\n"
+        : "=r" (result)
+        : "r" (syscall_number)
+        : "rax"
+    );
+    return result;
+}
 // Runs AFTER the CR3 switch, on our own dedicated stack.
 // Uses only the pre-captured g_fb_* globals — never touches
 // framebuffer_request again, since it's unmapped under our new tables.
 // Test process 1: fills a small box with blue, forever.
 static void test_process_1(void) {
+    do_syscall(0); // SYS_TEST — should flash the indicator box and prove the pipeline works
+
     for (;;) {
         for (uint32_t y = 300; y < 320; y++) {
             for (uint32_t x = 50; x < 70; x++) {
