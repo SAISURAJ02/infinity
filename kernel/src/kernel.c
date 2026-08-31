@@ -110,6 +110,8 @@ void kernel_main(void) {
     gdt_init();
     idt_init();
     pic_remap();
+    pit_init(100); // 100 Hz — a tick every 10ms
+    keyboard_init();
     outb(0x21, inb(0x21) & ~0b00000011);
     __asm__ volatile ("sti");
     pmm_init();

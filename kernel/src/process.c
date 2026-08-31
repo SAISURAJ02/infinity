@@ -3,6 +3,7 @@
 #include "heap.h"
 #include <stddef.h>
 #include "pic.h"
+#include "paging.h"
 
 static uint64_t next_pid = 1;
 static struct process *process_list = NULL;
@@ -16,6 +17,29 @@ void process_init(void) {
     next_pid = 1;
 }
 
+#define ENTRIES_PER_TABLE 512
+typedef uint64_t page_table_t[ENTRIES_PER_TABLE];
+
+static uint64_t create_process_pml4(void) {
+    page_table_t *new_pml4 = (page_table_t *)pmm_alloc_frame();
+    page_table_t *kernel_pml4 = (page_table_t *)paging_get_pml4();
+
+    for (int i = 0; i < ENTRIES_PER_TABLE; i++) {
+        if (i >= 256) {
+            // Higher half: identical across every process, so the kernel
+            // (interrupts, syscalls, scheduler) keeps working no matter
+            // which process's address space is currently active.
+            (*new_pml4)[i] = (*kernel_pml4)[i];
+        } else {
+            // Lower half: unique per process (user-space memory).
+            // Empty for now — we'll populate this once processes actually
+            // get their own user-space allocations.
+            (*new_pml4)[i] = 0;
+        }
+    }
+
+    return (uint64_t)new_pml4;
+}
 struct process *process_create(void (*entry_point)(void)) {
     struct process *proc = (struct process *)kmalloc(sizeof(struct process));
     if (proc == NULL) {
@@ -61,8 +85,7 @@ struct process *process_create(void (*entry_point)(void)) {
     }
 
     proc->rsp = (uint64_t)stack_top;
-    proc->pml4_phys = 0; // TODO: per-process address space, coming later
-
+    proc->pml4_phys = create_process_pml4();
     proc->next = process_list;
     process_list = proc;
 
@@ -97,6 +120,11 @@ void scheduler_run_next(void) {
 // process's saved RSP, saves it, advances to the next process, sends
 // the PIC EOI, and returns the RSP to resume.
 uint64_t schedule(uint64_t current_rsp) {
+    // ALWAYS acknowledge the timer interrupt first, before any early return —
+    // otherwise the PIC's in-service register stays stuck, and it will
+    // never deliver another interrupt (IRQ0 or otherwise) again.
+    pic_send_eoi(0);
+
     if (current_process != NULL) {
         current_process->rsp = current_rsp;
         current_process->state = PROCESS_READY;
@@ -111,9 +139,6 @@ uint64_t schedule(uint64_t current_rsp) {
                        : process_list;
 
     current_process->state = PROCESS_RUNNING;
-
-    // Acknowledge the timer interrupt (IRQ0), same as before.
-    pic_send_eoi(0);
 
     return current_process->rsp;
 }

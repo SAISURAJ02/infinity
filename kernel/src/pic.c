@@ -50,3 +50,39 @@ void pic_send_eoi(uint8_t irq) {
         outb(PIC2_COMMAND, PIC_EOI);
     outb(PIC1_COMMAND, PIC_EOI);
 }
+void pit_init(uint32_t frequency) {
+    uint32_t divisor = 1193182 / frequency;
+
+    outb(0x43, 0x36); // channel 0, low+high byte, mode 3 (square wave, repeating)
+    outb(0x40, (uint8_t)(divisor & 0xFF));        // low byte
+    outb(0x40, (uint8_t)((divisor >> 8) & 0xFF)); // high byte
+}
+void keyboard_init(void) {
+    // Drain any leftover data in port 0x60
+    while (inb(0x64) & 1) {
+        inb(0x60);
+    }
+
+    // Enable the keyboard port (Command 0xAE)
+    outb(0x64, 0xAE);
+
+    // Read the Controller Configuration Byte (Command 0x20)
+    outb(0x64, 0x20);
+    while (!(inb(0x64) & 1)) {} // Wait until data is ready
+    uint8_t config = inb(0x60);
+
+    // Set Bit 0 (Enable IRQ1 interrupt) and clear Bit 4 (Enable clock)
+    config |= (1 << 0);
+    config &= ~(1 << 4);
+
+    // Write the Configuration Byte back (Command 0x60)
+    outb(0x64, 0x60);
+    while (inb(0x64) & 2) {} // Wait until input buffer is clear
+    outb(0x60, config);
+
+    // Tell the keyboard device itself to start scanning (Command 0xF4)
+    outb(0x60, 0xF4);
+    while (inb(0x64) & 1) {
+        inb(0x60); // Consume ACK
+    }
+}
