@@ -110,9 +110,11 @@ void scheduler_run_next(void) {
     if (prev == NULL) {
         // First-ever switch: nothing to save, just jump straight in.
         uint64_t throwaway;
+        load_cr3(current_process->pml4_phys);
         context_switch(&throwaway, current_process->rsp);
     } else {
         prev->state = PROCESS_READY;
+        load_cr3(current_process->pml4_phys);
         context_switch(&prev->rsp, current_process->rsp);
     }
 }
@@ -139,6 +141,8 @@ uint64_t schedule(uint64_t current_rsp) {
                        : process_list;
 
     current_process->state = PROCESS_RUNNING;
+
+    load_cr3(current_process->pml4_phys);
 
     return current_process->rsp;
 }

@@ -9,3 +9,7 @@ paging_switch:
     mov rsp, rsi
     xor rbp, rbp
     jmp rdx
+global load_cr3
+load_cr3:
+    mov cr3, rdi
+    ret

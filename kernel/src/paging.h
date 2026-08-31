@@ -11,5 +11,6 @@ void paging_map(uint64_t virt_addr, uint64_t phys_addr, uint64_t flags);
 uint64_t paging_virt_to_phys_hhdm(uint64_t virt_addr);
 uint64_t paging_get_pml4(void);
 extern void paging_switch(uint64_t pml4_phys_addr, uint64_t new_stack_top, void (*continuation)(void));
+extern void load_cr3(uint64_t pml4_phys_addr);
 
 #endif
