@@ -22,6 +22,7 @@ uint32_t *g_fb_ptr;
 uint64_t  g_fb_width;
 uint64_t  g_fb_height;
 uint64_t  g_fb_pitch;
+
 static void hcf(void) {
     for (;;) {
         __asm__ volatile ("hlt");
@@ -46,6 +47,7 @@ void keyboard_flash(void) {
     }
     toggle = (toggle == 0x0000FF00) ? 0x000000FF : 0x0000FF00;
 }
+
 static inline uint64_t do_syscall(uint64_t syscall_number) {
     uint64_t result;
     __asm__ volatile (
@@ -58,32 +60,47 @@ static inline uint64_t do_syscall(uint64_t syscall_number) {
     );
     return result;
 }
-// Runs AFTER the CR3 switch, on our own dedicated stack.
-// Uses only the pre-captured g_fb_* globals — never touches
-// framebuffer_request again, since it's unmapped under our new tables.
-// Test process 1: fills a small box with blue, forever.
-static void test_process_1(void) {
-    do_syscall(0); // SYS_TEST — should flash the indicator box and prove the pipeline works
 
+static inline uint64_t do_syscall_write_pixel(uint32_t x, uint32_t y, uint32_t color) {
+    uint64_t result;
+    uint64_t packed_xy = ((uint64_t)y << 16) | (uint64_t)x;
+    __asm__ volatile (
+        "mov $1, %%rax\n"      // syscall number 1 = SYS_WRITE_PIXEL
+        "mov %1, %%rbx\n"
+        "mov %2, %%rcx\n"
+        "int $0x80\n"
+        "mov %%rax, %0\n"
+        : "=r" (result)
+        : "r" (packed_xy), "r" ((uint64_t)color)
+        : "rax", "rbx", "rcx"
+    );
+    return result;
+}
+
+// Test process 1: HAS a capability for its region — should successfully
+// draw blue via the syscall (capability check passes).
+static void test_process_1(void) {
     for (;;) {
         for (uint32_t y = 300; y < 320; y++) {
             for (uint32_t x = 50; x < 70; x++) {
-                g_fb_ptr[y * (g_fb_pitch / 4) + x] = 0x000000FF; // blue
+                do_syscall_write_pixel(x, y, 0x000000FF); // blue, via syscall + capability check
             }
         }
     }
 }
 
-// Test process 2: fills a different small box with magenta, forever.
+// Test process 2: has NO capability at all — every syscall write attempt
+// should be DENIED, proving the check genuinely blocks unauthorized access.
 static void test_process_2(void) {
     for (;;) {
         for (uint32_t y = 300; y < 320; y++) {
             for (uint32_t x = 100; x < 120; x++) {
-                g_fb_ptr[y * (g_fb_pitch / 4) + x] = 0x00FF00FF; // magenta
+                do_syscall_write_pixel(x, y, 0x00FF00FF); // magenta — should be DENIED, nothing drawn
             }
         }
     }
 }
+
 static void kernel_post_paging(void) {
     __asm__ volatile ("sti");
 
@@ -98,14 +115,20 @@ static void kernel_post_paging(void) {
     }
 
     process_init();
-    process_create(test_process_1);
-    process_create(test_process_2);
+    struct process *p1 = process_create(test_process_1);
+    process_create(test_process_2); // deliberately NOT granted any capability
+
+    // Grant test_process_1 permission to draw ONLY in its own region —
+    // this is the actual security boundary being demonstrated.
+    process_grant_capability(p1, CAP_DRAW_REGION, 50, 70, 300, 320);
+
     scheduler_run_next(); // jumps into a process and NEVER RETURNS here
 
     // Unreachable — scheduler_run_next() permanently transfers control
     // into a process via iretq and never returns to this function.
     hcf();
 }
+
 void kernel_main(void) {
     gdt_init();
     idt_init();
@@ -122,8 +145,6 @@ void kernel_main(void) {
     }
     struct limine_framebuffer *fb = framebuffer_request.response->framebuffers[0];
 
-    // Capture everything we'll need AFTER the switch, right now,
-    // while Limine's structures are still safely accessible.
     g_fb_ptr    = (uint32_t *)fb->address;
     g_fb_width  = fb->width;
     g_fb_height = fb->height;
