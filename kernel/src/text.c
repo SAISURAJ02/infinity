@@ -27,3 +27,15 @@ void draw_string(const char *str, uint32_t screen_x, uint32_t screen_y, uint32_t
         str++;
     }
 }
+void draw_hex(uint32_t value, uint32_t screen_x, uint32_t screen_y, uint32_t color) {
+    char hex_chars[] = "0123456789ABCDEF";
+    char buf[9]; // 8 hex digits + null terminator
+    buf[8] = '\0';
+
+    for (int i = 7; i >= 0; i--) {
+        buf[i] = hex_chars[value & 0xF];
+        value >>= 4;
+    }
+
+    draw_string(buf, screen_x, screen_y, color);
+}

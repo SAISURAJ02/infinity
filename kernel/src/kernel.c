@@ -10,6 +10,8 @@
 #include "heap.h"
 #include "text.h"
 #include "process.h"
+#include "disk.h"
+#include "ata.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -47,7 +49,38 @@ void keyboard_flash(void) {
     }
     toggle = (toggle == 0x0000FF00) ? 0x000000FF : 0x0000FF00;
 }
+static void test_disk(void) {
+    ata_init();
 
+    uint8_t write_buf[512];
+    uint8_t read_buf[512];
+
+    for (int i = 0; i < 512; i++) {
+        write_buf[i] = (uint8_t)(i & 0xFF);
+    }
+
+    int write_result = disk_write_sector(100, write_buf);
+    draw_string("WRITE:", 50, 400, 0xFFFFFFFF);
+    draw_hex((uint32_t)write_result, 130, 400, 0xFFFFFFFF);
+    draw_string("STATUS:", 50, 420, 0xFFFFFFFF);
+    draw_hex((uint32_t)g_last_ata_status, 140, 420, 0xFFFFFFFF);
+
+    int read_result = disk_read_sector(100, read_buf);
+    draw_string("READ:", 50, 440, 0xFFFFFFFF);
+    draw_hex((uint32_t)read_result, 130, 440, 0xFFFFFFFF);
+    draw_string("STATUS:", 50, 460, 0xFFFFFFFF);
+    draw_hex((uint32_t)g_last_ata_status, 140, 460, 0xFFFFFFFF);
+
+    int match = 1;
+    for (int i = 0; i < 512; i++) {
+        if (write_buf[i] != read_buf[i]) {
+            match = 0;
+            break;
+        }
+    }
+    draw_string("MATCH:", 50, 480, 0xFFFFFFFF);
+    draw_hex((uint32_t)match, 130, 480, 0xFFFFFFFF);
+}
 static inline uint64_t do_syscall(uint64_t syscall_number) {
     uint64_t result;
     __asm__ volatile (
@@ -105,6 +138,8 @@ static void kernel_post_paging(void) {
     __asm__ volatile ("sti");
 
     heap_init();
+    
+    test_disk();
 
     draw_string("1234ABCD", 50, 20, 0xFFFFFFFF); // white text near the top
 

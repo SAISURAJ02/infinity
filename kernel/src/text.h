@@ -5,5 +5,6 @@
 
 void draw_char(char c, uint32_t screen_x, uint32_t screen_y, uint32_t color);
 void draw_string(const char *str, uint32_t screen_x, uint32_t screen_y, uint32_t color);
+void draw_hex(uint32_t value, uint32_t screen_x, uint32_t screen_y, uint32_t color);
 
 #endif

@@ -9,3 +9,4 @@ limine/
 iso_root/
 *.iso
 qemu_debug.log
+disk.img
