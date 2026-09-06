@@ -12,6 +12,7 @@
 #include "process.h"
 #include "disk.h"
 #include "ata.h"
+#include "fs.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
@@ -81,6 +82,37 @@ static void test_disk(void) {
     draw_string("MATCH:", 50, 480, 0xFFFFFFFF);
     draw_hex((uint32_t)match, 130, 480, 0xFFFFFFFF);
 }
+static void test_filesystem(void) {
+    fs_init();
+
+    const char *test_data = "Hello, Infinity filesystem!";
+    uint32_t test_len = 0;
+    while (test_data[test_len] != '\0') test_len++; // simple strlen, no libc
+
+    int create_result = fs_create_file("hello.txt");
+    draw_string("FS CREATE:", 50, 500, 0xFFFFFFFF);
+    draw_hex((uint32_t)create_result, 180, 500, 0xFFFFFFFF);
+
+    int write_result = fs_write_file("hello.txt", test_data, test_len);
+    draw_string("FS WRITE:", 50, 520, 0xFFFFFFFF);
+    draw_hex((uint32_t)write_result, 180, 520, 0xFFFFFFFF);
+
+    char read_buf[64] = {0};
+    int read_result = fs_read_file("hello.txt", read_buf, sizeof(read_buf));
+    draw_string("FS READ BYTES:", 50, 540, 0xFFFFFFFF);
+    draw_hex((uint32_t)read_result, 220, 540, 0xFFFFFFFF);
+
+    // Compare byte-for-byte
+    int match = 1;
+    for (uint32_t i = 0; i < test_len; i++) {
+        if (read_buf[i] != test_data[i]) {
+            match = 0;
+            break;
+        }
+    }
+    draw_string("FS MATCH:", 50, 560, 0xFFFFFFFF);
+    draw_hex((uint32_t)match, 180, 560, 0xFFFFFFFF);
+}
 static inline uint64_t do_syscall(uint64_t syscall_number) {
     uint64_t result;
     __asm__ volatile (
@@ -140,9 +172,9 @@ static void kernel_post_paging(void) {
     heap_init();
     
     test_disk();
+    test_filesystem();
 
-    draw_string("1234ABCD", 50, 20, 0xFFFFFFFF); // white text near the top
-
+    draw_string("1234ABCD", 50, 20, 0xFFFFFFFF);
     for (uint64_t y = 50; y < 250; y++) {
         for (uint64_t x = 50; x < 250; x++) {
             g_fb_ptr[y * (g_fb_pitch / 4) + x] = 0x0000FF00; // green
