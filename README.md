@@ -86,54 +86,55 @@
     
     ## Project Structure
     
+    ```text
+    infinity/
+    ├── Makefile                        # Build targets (all, clean, iso, run)
+    ├── linker.ld                       # Linker script for higher-half kernel image
+    ├── limine.cfg                      # Limine bootloader configuration
+    ├── disk.img                        # Emulated hard disk for ATA PIO driver
+    ├── kernel/
+    │   ├── kernel.elf                  # Compiled 64-bit kernel executable
+    │   └── src/
+    │       ├── kernel.c                # Kernel entry point and boot orchestration
+    │       ├── gdt.c / gdt.h           # Global Descriptor Table
+    │       ├── gdt_flush.asm           # Far-return GDT flush
+    │       ├── idt.c / idt.h           # Interrupt Descriptor Table
+    │       ├── idt_load.asm            # LIDT instruction wrapper
+    │       ├── isr.asm                 # Exception stubs (#DE, #UD, #GP, #PF)
+    │       ├── pic.c / pic.h           # Dual 8259 PIC remapping & PIT frequency
+    │       ├── irq.asm                 # IRQ0 scheduler stub & IRQ1 keyboard stub
+    │       ├── io.h                    # Port I/O helpers (inb/outb, inw/outw)
+    │       ├── pmm.c / pmm.h           # Physical memory bitmap allocator
+    │       ├── paging.c / paging.h     # 4-level paging and HHDM management
+    │       ├── paging_load.asm         # CR3 switcher and continuation trampoline
+    │       ├── heap.c / heap.h         # Free-list kernel heap (kmalloc / kfree)
+    │       ├── process.c / process.h   # PCB, process creation & scheduler
+    │       ├── context_switch.asm      # Assembly context switch (iretq)
+    │       ├── syscall.c / syscall.h   # Syscall dispatcher & capability validation
+    │       ├── syscall_entry.asm       # int 0x80 assembly entry stub
+    │       ├── disk.c / disk.h         # Generic sector read/write abstraction
+    │       ├── ata.c / ata.h           # 28-bit LBA ATA PIO driver
+    │       ├── fs.c / fs.h             # INFS custom filesystem
+    │       ├── keyboard.c / keyboard.h # PS/2 keyboard driver & circular buffer
+    │       ├── font.c / font.h         # 8x8 monospace bitmap font
+    │       ├── text.c / text.h         # String and hex framebuffer blitting
+    │       └── shell.c / shell.h       # Interactive shell process
+    └── progress/                       # Engineering logs and milestone notes
+        ├── day1.md ... day15.md
+  ──────
+  ## Building and Running
 
-  infinity/
-  |-- Makefile                    # Build automation and QEMU run targets
-  |-- linker.ld                   # Linker script for higher-half kernel image
-  |-- limine.cfg                  # Limine bootloader configuration
-  |-- disk.img                    # Emulated hard disk image for ATA PIO driver
-  |-- kernel/
-  |-- kernel.elf              # Compiled ELF64 kernel executable
-  |-- src/
-  |-- kernel.c            # Kernel initialization and boot orchestration
-  |-- gdt.c / gdt.h       # Global Descriptor Table setup
-  |-- gdt_flush.asm       # GDT reload and segment register reload
-  |-- idt.c / idt.h       # Interrupt Descriptor Table management
-  |-- idt_load.asm        # LIDT wrapper
-  |-- isr.asm             # CPU exception interrupt service routines
-  |-- pic.c / pic.h       # 8259 PIC remapping and PIT frequency setup
-  |-- irq.asm             # Hardware interrupt stubs (IRQ0 scheduler, IRQ1 keyboard)
-  |-- io.h                # Inlined assembly port I/O functions
-  |-- pmm.c / pmm.h       # Physical memory bitmap allocator
-  |-- paging.c / paging.h # 4-level page table management and HHDM
-  |-- paging_load.asm     # CR3 loading and page-table switch trampoline
-  |-- heap.c / heap.h     # Kernel heap allocator (kmalloc, kfree)
-  |-- process.c / process.h # PCB, process creation, capability checks, scheduler
-  |-- context_switch.asm  # Assembly context switch routine
-  |-- syscall.c / syscall.h # Syscall dispatcher and capability validation
-  |-- syscall_entry.asm   # int 0x80 assembly entry stub
-  |-- disk.c / disk.h     # Generic sector read/write disk interface
-  |-- ata.c / ata.h       # ATA PIO disk controller driver
-  |-- fs.c / fs.h         # INFS filesystem implementation
-  |-- keyboard.c / keyboard.h # PS/2 keyboard driver and ring buffer
-  |-- font.c / font.h     # 8x8 monospace bitmap font definitions
-  |-- text.c / text.h     # Text, string, and hexadecimal screen blitting
-  |-- shell.c / shell.h   # Interactive command shell
+  ### Prerequisites
 
-    
-    ---
-    
-    ## Building and Running
+  • x86_64-elf-gcc (Cross compiler targeting x86_64 freestanding)
+  • nasm (Netwide Assembler)
+  • xorriso (ISO creation utility)
+  • qemu-system-x86_64 (Hardware emulator)
 
-    ### Prerequisites
-    * `x86_64-elf-gcc` (Cross compiler targeting x86_64 freestanding)
-    * `nasm` (Netwide Assembler)
-    * `xorriso` (ISO creation utility)
-    * `qemu-system-x86_64` (Hardware emulator)
+  ### Compilation
 
-    ### Compilation
-    To compile the kernel and package the bootable ISO image:
-    ```bash
+  To compile the kernel and package the bootable ISO image:
+
     make iso
 
   ### Running in QEMU
