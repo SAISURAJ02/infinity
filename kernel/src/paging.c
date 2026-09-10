@@ -26,22 +26,32 @@ static uint64_t pt_index(uint64_t vaddr)   { return (vaddr >> 12) & 0x1FF; }
 
 // Given a table and an index, return the next-level table —
 // allocating and zeroing a fresh one via the PMM if it doesn't exist yet.
-// Intermediate tables are always created with PAGE_WRITABLE so that leaf-level
-// permissions (in paging_map) are the ones that actually get enforced.
+// NOTE: new tables are accessed via their HHDM (higher-half) virtual
+// address, not their raw physical address — the low-half identity map
+// is NOT shared with other processes, so dereferencing a raw physical
+// address as a pointer would fault under any process other than the
+// kernel's own original address space.
 static page_table_t *get_or_create_table(page_table_t *table, uint64_t index) {
     if (!((*table)[index] & PAGE_PRESENT)) {
         void *new_frame = pmm_alloc_frame();
-        uint64_t *new_table = (uint64_t *)new_frame;
+        uint64_t *new_table = (uint64_t *)paging_phys_to_virt_hhdm((uint64_t)new_frame);
         for (int i = 0; i < ENTRIES_PER_TABLE; i++) {
             new_table[i] = 0;
         }
         (*table)[index] = (uint64_t)new_frame | PAGE_PRESENT | PAGE_WRITABLE;
     }
-    return (page_table_t *)((*table)[index] & ~0xFFFULL);
+    // Table pointers used for further traversal must ALSO go through HHDM,
+    // for the same reason as above.
+    uint64_t phys = (*table)[index] & ~0xFFFULL;
+    return (page_table_t *)paging_phys_to_virt_hhdm(phys);
 }
 
 uint64_t paging_virt_to_phys_hhdm(uint64_t virt_addr) {
     return virt_addr - hhdm_request.response->offset;
+}
+
+uint64_t paging_phys_to_virt_hhdm(uint64_t phys_addr) {
+    return phys_addr + hhdm_request.response->offset;
 }
 
 uint64_t paging_get_pml4(void) {
@@ -56,10 +66,22 @@ void paging_init(uint64_t fb_virt_addr, uint64_t fb_phys_addr, uint64_t fb_size)
         (*pml4)[i] = 0;
     }
 
-    // Safety net: identity-map all detected physical memory.
+    // Safety net: identity-map all detected physical memory (low half —
+    // this is ONLY safe for the kernel's own original address space,
+    // since it is NOT copied into other processes' PML4s).
     uint64_t max_addr = pmm_get_highest_addr();
     for (uint64_t addr = 0; addr < max_addr; addr += 4096) {
         paging_map(addr, addr, PAGE_WRITABLE);
+    }
+
+    // ALSO map physical RAM at its HHDM address, in the HIGHER half —
+    // this IS shared by every process (entries 256-511 are always
+    // copied), giving kernel code a safe, universal way to access
+    // physical memory by pointer under ANY process's page tables,
+    // without exposing the low-half identity map to other processes.
+    for (uint64_t addr = 0; addr < max_addr; addr += 4096) {
+        uint64_t hhdm_addr = paging_phys_to_virt_hhdm(addr);
+        paging_map(hhdm_addr, addr, PAGE_WRITABLE);
     }
 
     // Map the kernel's own code/data at its actual higher-half address
@@ -74,8 +96,6 @@ void paging_init(uint64_t fb_virt_addr, uint64_t fb_phys_addr, uint64_t fb_size)
     }
 
     // Allocate and map a dedicated kernel stack (16KB = 4 pages).
-    // Stack grows downward from STACK_VIRT_TOP, so the mapped pages must sit
-    // BELOW the top, not starting at it — hence (i + 1) * 4096.
     #define STACK_PAGES 4
     #define STACK_VIRT_TOP 0xFFFFFFFFA0000000ULL
 
@@ -85,9 +105,7 @@ void paging_init(uint64_t fb_virt_addr, uint64_t fb_phys_addr, uint64_t fb_size)
         paging_map(virt, (uint64_t)frame, PAGE_WRITABLE);
     }
 
-    // Map the framebuffer at its ACTUAL virtual address (the HHDM address
-    // kernel.c uses via fb->address), not an identity mapping — so drawing
-    // to the screen keeps working after the CR3 switch.
+    // Map the framebuffer at its ACTUAL virtual address.
     uint64_t fb_pages = (fb_size + 4095) / 4096;
     for (uint64_t i = 0; i < fb_pages; i++) {
         uint64_t offset = i * 4096;

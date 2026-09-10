@@ -2,6 +2,7 @@
 #include "pic.h"
 #include "io.h"
 #include "syscall.h"
+#include "keyboard.h"
 // One IDT entry, packed exactly as the CPU expects it (64-bit mode format)
 struct idt_entry {
     uint16_t offset_low;    // handler address, bits 0-15
@@ -46,11 +47,7 @@ void isr_handler(struct registers *regs) {
 void irq_handler(struct registers *regs) {
     if (regs->int_no == 33) {
         uint8_t scancode = inb(0x60);
-        if (!(scancode & 0x80)) {
-            // key press — toggle a small indicator pixel, without halting,
-            // so the kernel keeps running normally after every keystroke
-            keyboard_flash();
-        }
+        keyboard_handle_scancode(scancode); // feeds the shell's input buffer
     }
     pic_send_eoi(regs->int_no - 32);
 }

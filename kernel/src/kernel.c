@@ -13,14 +13,13 @@
 #include "disk.h"
 #include "ata.h"
 #include "fs.h"
+#include "shell.h"
 
 static volatile struct limine_framebuffer_request framebuffer_request = {
     .id = LIMINE_FRAMEBUFFER_REQUEST,
     .revision = 0
 };
 
-// Captured BEFORE the CR3 switch, since Limine's response structures
-// themselves are not guaranteed to be mapped after we switch page tables.
 uint32_t *g_fb_ptr;
 uint64_t  g_fb_width;
 uint64_t  g_fb_height;
@@ -41,6 +40,8 @@ void isr_screen_halt(uint32_t color) {
     hcf();
 }
 
+// Kept for potential future use, but no longer wired into the keyboard IRQ —
+// real character input via keyboard_handle_scancode() replaced it.
 void keyboard_flash(void) {
     static uint32_t toggle = 0x0000FF00;
     for (uint32_t y = 0; y < 20; y++) {
@@ -50,87 +51,12 @@ void keyboard_flash(void) {
     }
     toggle = (toggle == 0x0000FF00) ? 0x000000FF : 0x0000FF00;
 }
-static void test_disk(void) {
-    ata_init();
-
-    uint8_t write_buf[512];
-    uint8_t read_buf[512];
-
-    for (int i = 0; i < 512; i++) {
-        write_buf[i] = (uint8_t)(i & 0xFF);
-    }
-
-    int write_result = disk_write_sector(100, write_buf);
-    draw_string("WRITE:", 50, 400, 0xFFFFFFFF);
-    draw_hex((uint32_t)write_result, 130, 400, 0xFFFFFFFF);
-    draw_string("STATUS:", 50, 420, 0xFFFFFFFF);
-    draw_hex((uint32_t)g_last_ata_status, 140, 420, 0xFFFFFFFF);
-
-    int read_result = disk_read_sector(100, read_buf);
-    draw_string("READ:", 50, 440, 0xFFFFFFFF);
-    draw_hex((uint32_t)read_result, 130, 440, 0xFFFFFFFF);
-    draw_string("STATUS:", 50, 460, 0xFFFFFFFF);
-    draw_hex((uint32_t)g_last_ata_status, 140, 460, 0xFFFFFFFF);
-
-    int match = 1;
-    for (int i = 0; i < 512; i++) {
-        if (write_buf[i] != read_buf[i]) {
-            match = 0;
-            break;
-        }
-    }
-    draw_string("MATCH:", 50, 480, 0xFFFFFFFF);
-    draw_hex((uint32_t)match, 130, 480, 0xFFFFFFFF);
-}
-static void test_filesystem(void) {
-    fs_init();
-
-    const char *test_data = "Hello, Infinity filesystem!";
-    uint32_t test_len = 0;
-    while (test_data[test_len] != '\0') test_len++; // simple strlen, no libc
-
-    int create_result = fs_create_file("hello.txt");
-    draw_string("FS CREATE:", 50, 500, 0xFFFFFFFF);
-    draw_hex((uint32_t)create_result, 180, 500, 0xFFFFFFFF);
-
-    int write_result = fs_write_file("hello.txt", test_data, test_len);
-    draw_string("FS WRITE:", 50, 520, 0xFFFFFFFF);
-    draw_hex((uint32_t)write_result, 180, 520, 0xFFFFFFFF);
-
-    char read_buf[64] = {0};
-    int read_result = fs_read_file("hello.txt", read_buf, sizeof(read_buf));
-    draw_string("FS READ BYTES:", 50, 540, 0xFFFFFFFF);
-    draw_hex((uint32_t)read_result, 220, 540, 0xFFFFFFFF);
-
-    // Compare byte-for-byte
-    int match = 1;
-    for (uint32_t i = 0; i < test_len; i++) {
-        if (read_buf[i] != test_data[i]) {
-            match = 0;
-            break;
-        }
-    }
-    draw_string("FS MATCH:", 50, 560, 0xFFFFFFFF);
-    draw_hex((uint32_t)match, 180, 560, 0xFFFFFFFF);
-}
-static inline uint64_t do_syscall(uint64_t syscall_number) {
-    uint64_t result;
-    __asm__ volatile (
-        "mov %1, %%rax\n"
-        "int $0x80\n"
-        "mov %%rax, %0\n"
-        : "=r" (result)
-        : "r" (syscall_number)
-        : "rax"
-    );
-    return result;
-}
 
 static inline uint64_t do_syscall_write_pixel(uint32_t x, uint32_t y, uint32_t color) {
     uint64_t result;
     uint64_t packed_xy = ((uint64_t)y << 16) | (uint64_t)x;
     __asm__ volatile (
-        "mov $1, %%rax\n"      // syscall number 1 = SYS_WRITE_PIXEL
+        "mov $1, %%rax\n"
         "mov %1, %%rbx\n"
         "mov %2, %%rcx\n"
         "int $0x80\n"
@@ -142,25 +68,23 @@ static inline uint64_t do_syscall_write_pixel(uint32_t x, uint32_t y, uint32_t c
     return result;
 }
 
-// Test process 1: HAS a capability for its region — should successfully
-// draw blue via the syscall (capability check passes).
-static void test_process_1(void) {
+// Capability demo process: HAS a capability for its region.
+void test_process_1(void) {
     for (;;) {
         for (uint32_t y = 300; y < 320; y++) {
             for (uint32_t x = 50; x < 70; x++) {
-                do_syscall_write_pixel(x, y, 0x000000FF); // blue, via syscall + capability check
+                do_syscall_write_pixel(x, y, 0x000000FF);
             }
         }
     }
 }
 
-// Test process 2: has NO capability at all — every syscall write attempt
-// should be DENIED, proving the check genuinely blocks unauthorized access.
-static void test_process_2(void) {
+// Capability demo process: has NO capability — every write should be denied.
+void test_process_2(void) {
     for (;;) {
         for (uint32_t y = 300; y < 320; y++) {
             for (uint32_t x = 100; x < 120; x++) {
-                do_syscall_write_pixel(x, y, 0x00FF00FF); // magenta — should be DENIED, nothing drawn
+                do_syscall_write_pixel(x, y, 0x00FF00FF);
             }
         }
     }
@@ -170,29 +94,14 @@ static void kernel_post_paging(void) {
     __asm__ volatile ("sti");
 
     heap_init();
-    
-    test_disk();
-    test_filesystem();
-
-    draw_string("1234ABCD", 50, 20, 0xFFFFFFFF);
-    for (uint64_t y = 50; y < 250; y++) {
-        for (uint64_t x = 50; x < 250; x++) {
-            g_fb_ptr[y * (g_fb_pitch / 4) + x] = 0x0000FF00; // green
-        }
-    }
+    ata_init();
+    fs_init();
 
     process_init();
-    struct process *p1 = process_create(test_process_1);
-    process_create(test_process_2); // deliberately NOT granted any capability
+    process_create(shell_run);
 
-    // Grant test_process_1 permission to draw ONLY in its own region —
-    // this is the actual security boundary being demonstrated.
-    process_grant_capability(p1, CAP_DRAW_REGION, 50, 70, 300, 320);
+    scheduler_run_next();
 
-    scheduler_run_next(); // jumps into a process and NEVER RETURNS here
-
-    // Unreachable — scheduler_run_next() permanently transfers control
-    // into a process via iretq and never returns to this function.
     hcf();
 }
 
@@ -200,7 +109,7 @@ void kernel_main(void) {
     gdt_init();
     idt_init();
     pic_remap();
-    pit_init(100); // 100 Hz — a tick every 10ms
+    pit_init(100);
     keyboard_init();
     outb(0x21, inb(0x21) & ~0b00000011);
     __asm__ volatile ("sti");

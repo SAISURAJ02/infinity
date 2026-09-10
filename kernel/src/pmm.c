@@ -1,5 +1,6 @@
 #include "pmm.h"
 #include "limine.h"
+#include<paging.h>
 
 #define FRAME_SIZE 4096
 
@@ -48,7 +49,7 @@ void pmm_init(void) {
     for (uint64_t i = 0; i < memmap->entry_count; i++) {
         struct limine_memmap_entry *entry = memmap->entries[i];
         if (entry->type == LIMINE_MEMMAP_USABLE && entry->length >= bitmap_size) {
-            bitmap = (uint8_t *)entry->base;
+            bitmap = (uint8_t *)paging_phys_to_virt_hhdm(entry->base);
             break;
         }
     }
@@ -75,7 +76,7 @@ void pmm_init(void) {
     // allocates over it later.
     // Finally, re-mark the bitmap's own storage as used, so nothing
     // allocates over it later.
-    uint64_t bitmap_start_frame = (uint64_t)bitmap / FRAME_SIZE;
+    uint64_t bitmap_start_frame = paging_virt_to_phys_hhdm((uint64_t)bitmap) / FRAME_SIZE;
     uint64_t bitmap_frame_count = (bitmap_size + FRAME_SIZE - 1) / FRAME_SIZE;
     for (uint64_t f = 0; f < bitmap_frame_count; f++) {
         bitmap_set(bitmap_start_frame + f);

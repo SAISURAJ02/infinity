@@ -9,7 +9,7 @@ static uint64_t next_pid = 1;
 static struct process *process_list = NULL;
 static struct process *current_process = NULL;
 
-#define PROCESS_STACK_SIZE (4 * 4096) // 16KB per process, same as our kernel stack
+#define PROCESS_STACK_SIZE (4 * 4096)
 
 void process_init(void) {
     process_list = NULL;
@@ -21,18 +21,28 @@ void process_init(void) {
 typedef uint64_t page_table_t[ENTRIES_PER_TABLE];
 
 static uint64_t create_process_pml4(void) {
-    page_table_t *new_pml4 = (page_table_t *)pmm_alloc_frame();
-    page_table_t *kernel_pml4 = (page_table_t *)paging_get_pml4();
+    uint64_t new_pml4_phys = (uint64_t)pmm_alloc_frame();
+    page_table_t *new_pml4 = (page_table_t *)paging_phys_to_virt_hhdm(new_pml4_phys);
+    page_table_t *kernel_pml4 = (page_table_t *)paging_phys_to_virt_hhdm(paging_get_pml4());
 
     for (int i = 0; i < ENTRIES_PER_TABLE; i++) {
         if (i >= 256) {
+            // Higher half: identical across every process (kernel code,
+            // stack, heap, framebuffer, AND the HHDM physical-memory
+            // window) — this is what keeps interrupts/syscalls/scheduler
+            // working under any process's CR3, without exposing the
+            // low-half identity map to other processes.
             (*new_pml4)[i] = (*kernel_pml4)[i];
         } else {
+            // Lower half: unique per process (user-space memory) —
+            // genuinely isolated, zeroed out.
             (*new_pml4)[i] = 0;
         }
     }
 
-    return (uint64_t)new_pml4;
+    // IMPORTANT: return the PHYSICAL address — CR3 always takes a
+    // physical address, never a virtual/HHDM one.
+    return new_pml4_phys;
 }
 
 struct process *process_create(void (*entry_point)(void)) {
@@ -43,7 +53,7 @@ struct process *process_create(void (*entry_point)(void)) {
 
     proc->pid = next_pid++;
     proc->state = PROCESS_READY;
-    proc->capability_count = 0; // start with zero capabilities — must be explicitly granted
+    proc->capability_count = 0;
 
     uint8_t *stack = (uint8_t *)kmalloc(PROCESS_STACK_SIZE);
     if (stack == NULL) {
@@ -54,14 +64,14 @@ struct process *process_create(void (*entry_point)(void)) {
     uint64_t *stack_top = (uint64_t *)(stack + PROCESS_STACK_SIZE);
     uint64_t *real_stack_top = stack_top;
 
-    *(--stack_top) = 0x10;                    // ss
-    *(--stack_top) = (uint64_t)real_stack_top; // rsp
-    *(--stack_top) = 0x202;                   // rflags
-    *(--stack_top) = 0x08;                    // cs
-    *(--stack_top) = (uint64_t)entry_point;   // rip
+    *(--stack_top) = 0x10;
+    *(--stack_top) = (uint64_t)real_stack_top;
+    *(--stack_top) = 0x202;
+    *(--stack_top) = 0x08;
+    *(--stack_top) = (uint64_t)entry_point;
 
-    *(--stack_top) = 32;                      // dummy int_no
-    *(--stack_top) = 0;                       // dummy err_code
+    *(--stack_top) = 32;
+    *(--stack_top) = 0;
 
     for (int i = 0; i < 15; i++) {
         *(--stack_top) = 0;
@@ -79,7 +89,7 @@ int process_grant_capability(struct process *proc, capability_type_t type,
                               uint32_t x_min, uint32_t x_max,
                               uint32_t y_min, uint32_t y_max) {
     if (proc->capability_count >= MAX_CAPABILITIES) {
-        return -1; // capability table full
+        return -1;
     }
 
     struct capability *cap = &proc->capabilities[proc->capability_count];
@@ -92,6 +102,7 @@ int process_grant_capability(struct process *proc, capability_type_t type,
     proc->capability_count++;
     return 0;
 }
+
 int process_check_capability(struct process *proc, capability_type_t type, uint32_t x, uint32_t y) {
     for (int i = 0; i < proc->capability_count; i++) {
         struct capability *cap = &proc->capabilities[i];
@@ -99,14 +110,18 @@ int process_check_capability(struct process *proc, capability_type_t type, uint3
         if (cap->type == type &&
             x >= cap->x_min && x <= cap->x_max &&
             y >= cap->y_min && y <= cap->y_max) {
-            return 1; // access granted — this capability covers the request
+            return 1;
         }
     }
-    return 0; // no matching capability found — access denied
+    return 0;
 }
 
 struct process *process_get_current(void) {
     return current_process;
+}
+
+struct process *process_get_list(void) {
+    return process_list;
 }
 
 void scheduler_run_next(void) {
