@@ -38,7 +38,7 @@ static page_table_t *get_or_create_table(page_table_t *table, uint64_t index) {
         for (int i = 0; i < ENTRIES_PER_TABLE; i++) {
             new_table[i] = 0;
         }
-        (*table)[index] = (uint64_t)new_frame | PAGE_PRESENT | PAGE_WRITABLE;
+        (*table)[index] = (uint64_t)new_frame | PAGE_PRESENT | PAGE_WRITABLE | PAGE_USER;
     }
     // Table pointers used for further traversal must ALSO go through HHDM,
     // for the same reason as above.
@@ -115,6 +115,18 @@ void paging_init(uint64_t fb_virt_addr, uint64_t fb_phys_addr, uint64_t fb_size)
 
 void paging_map(uint64_t virt_addr, uint64_t phys_addr, uint64_t flags) {
     page_table_t *pdpt = get_or_create_table(pml4, pml4_index(virt_addr));
+    page_table_t *pd   = get_or_create_table(pdpt, pdpt_index(virt_addr));
+    page_table_t *pt   = get_or_create_table(pd,   pd_index(virt_addr));
+    (*pt)[pt_index(virt_addr)] = (phys_addr & ~0xFFFULL) | PAGE_PRESENT | flags;
+}
+
+// Same walk as paging_map(), but starts from an explicitly given PML4
+// instead of the kernel's own global one — needed because a freshly
+// created process's page tables aren't active in CR3 yet when we build
+// them (see process_create_user()).
+void paging_map_into(uint64_t target_pml4_phys, uint64_t virt_addr, uint64_t phys_addr, uint64_t flags) {
+    page_table_t *target_pml4 = (page_table_t *)paging_phys_to_virt_hhdm(target_pml4_phys);
+    page_table_t *pdpt = get_or_create_table(target_pml4, pml4_index(virt_addr));
     page_table_t *pd   = get_or_create_table(pdpt, pdpt_index(virt_addr));
     page_table_t *pt   = get_or_create_table(pd,   pd_index(virt_addr));
     (*pt)[pt_index(virt_addr)] = (phys_addr & ~0xFFFULL) | PAGE_PRESENT | flags;

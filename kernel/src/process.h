@@ -28,8 +28,10 @@ struct process {
     struct capability capabilities[MAX_CAPABILITIES];
     int capability_count;
 
-    uint64_t rsp;
+    uint64_t rsp;         // kernel-mode continuation pointer — same meaning as today
     uint64_t pml4_phys;
+    uint64_t kstack_top;  // top of this process's private ring-0 stack (for future TSS.rsp0 sync, Pillar 5)
+    uint64_t ustack_top;  // top of this process's ring-3 user stack — 0 for ring-0-only processes
 
     struct process *next;
 };
@@ -45,6 +47,8 @@ int process_grant_capability(struct process *proc, capability_type_t type,
                               uint32_t y_min, uint32_t y_max);
 struct process *process_get_current(void);
 struct process *process_get_list(void);
+struct process *process_create(void (*entry_point)(void));
+struct process *process_create_user(void);
 
 extern void context_switch(uint64_t *old_rsp, uint64_t new_rsp);
 extern void load_cr3(uint64_t pml4_phys_addr);

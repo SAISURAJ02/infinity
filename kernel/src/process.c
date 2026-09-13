@@ -45,6 +45,80 @@ static uint64_t create_process_pml4(void) {
     return new_pml4_phys;
 }
 
+#define USER_CODE_VADDR  0x400000ULL
+#define USER_STACK_VADDR 0x500000ULL
+#define USER_CS (0x18 | 3)   // user code selector, RPL=3 -> 0x1B
+#define USER_SS (0x20 | 3)   // user data selector, RPL=3 -> 0x23
+
+// mov eax, 0 ; int 0x80 ; jmp $
+// Calls SYS_TEST (rax=0), which runs keyboard_flash() in the kernel —
+// a visible signal that ring 3 -> syscall -> ring 0 -> back to ring 3
+// all actually worked, then spins forever so it doesn't run off the page.
+static const uint8_t user_test_code[] = {
+    0xB8, 0x00, 0x00, 0x00, 0x00,
+    0xCD, 0x80,
+    0xEB, 0xFE
+};
+
+struct process *process_create_user(void) {
+    struct process *proc = (struct process *)kmalloc(sizeof(struct process));
+    if (proc == NULL) {
+        return NULL;
+    }
+
+    proc->pid = next_pid++;
+    proc->state = PROCESS_READY;
+    proc->capability_count = 0;
+    proc->pml4_phys = create_process_pml4();
+
+    uint8_t *kstack = (uint8_t *)kmalloc(PROCESS_STACK_SIZE);
+    if (kstack == NULL) {
+        kfree(proc);
+        return NULL;
+    }
+    proc->kstack_top = (uint64_t)(kstack + PROCESS_STACK_SIZE);
+
+    // Write the test code into a fresh physical frame via its safe HHDM
+    // view, then map that SAME frame into the process's own tables at
+    // USER_CODE_VADDR, marked PAGE_USER.
+    uint64_t code_phys = (uint64_t)pmm_alloc_frame();
+    uint8_t *code_hhdm = (uint8_t *)paging_phys_to_virt_hhdm(code_phys);
+    for (uint32_t i = 0; i < sizeof(user_test_code); i++) {
+        code_hhdm[i] = user_test_code[i];
+    }
+    paging_map_into(proc->pml4_phys, USER_CODE_VADDR, code_phys, PAGE_USER);
+
+    // A separate page for the ring-3 stack.
+    uint64_t ustack_phys = (uint64_t)pmm_alloc_frame();
+    paging_map_into(proc->pml4_phys, USER_STACK_VADDR, ustack_phys, PAGE_WRITABLE | PAGE_USER);
+    proc->ustack_top = USER_STACK_VADDR + 4096;
+
+    // Fake iretq frame, built on the KERNEL stack — but this time the
+    // rsp/cs/ss fields are all real and load-bearing, since this is a
+    // ring0 -> ring3 transition (5-value iretq, from the rule we worked
+    // through earlier).
+    uint64_t *stack_top = (uint64_t *)proc->kstack_top;
+
+    *(--stack_top) = USER_SS;
+    *(--stack_top) = proc->ustack_top;
+    *(--stack_top) = 0x202;
+    *(--stack_top) = USER_CS;
+    *(--stack_top) = USER_CODE_VADDR;
+
+    *(--stack_top) = 32;
+    *(--stack_top) = 0;
+
+    for (int i = 0; i < 15; i++) {
+        *(--stack_top) = 0;
+    }
+
+    proc->rsp = (uint64_t)stack_top;
+    proc->next = process_list;
+    process_list = proc;
+
+    return proc;
+}
+
 struct process *process_create(void (*entry_point)(void)) {
     struct process *proc = (struct process *)kmalloc(sizeof(struct process));
     if (proc == NULL) {

@@ -176,10 +176,13 @@ static void execute_command(const char *cmd) {
         process_create(test_process_2);
         process_grant_capability(p1, CAP_DRAW_REGION, 50, 70, 300, 320);
         output_print("Capability demo started: P1 drawing, P2 denied");
+    } else if (str_equal(cmd, "ring3demo")) {
+        process_create_user();
+        output_print("Ring-3 process launched — watch for a keyboard LED flash");
     } else if (str_equal(cmd, "clear")) {
             output_count = 0;
     } else if (str_equal(cmd, "help")) {
-        output_print("commands: ls, cat <f>, write <f>, ps, clear, help, capdemo");
+        output_print("commands: ls, cat <f>, write <f>, ps, clear, help, capdemo, ring3demo");
     } else if (cmd[0] == '\0') {
         // empty command, do nothing
     } else {
