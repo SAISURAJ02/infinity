@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include "pic.h"
 #include "paging.h"
+#include "tss.h"
 
 static uint64_t next_pid = 1;
 static struct process *process_list = NULL;
@@ -43,6 +44,48 @@ static uint64_t create_process_pml4(void) {
     // IMPORTANT: return the PHYSICAL address — CR3 always takes a
     // physical address, never a virtual/HHDM one.
     return new_pml4_phys;
+}
+
+struct process *process_create(void (*entry_point)(void)) {
+    struct process *proc = (struct process *)kmalloc(sizeof(struct process));
+    if (proc == NULL) {
+        return NULL;
+    }
+
+    proc->pid = next_pid++;
+    proc->state = PROCESS_READY;
+    proc->capability_count = 0;
+
+    uint8_t *stack = (uint8_t *)kmalloc(PROCESS_STACK_SIZE);
+    if (stack == NULL) {
+        kfree(proc);
+        return NULL;
+    }
+
+    uint64_t *stack_top = (uint64_t *)(stack + PROCESS_STACK_SIZE);
+    uint64_t *real_stack_top = stack_top;
+
+    *(--stack_top) = 0x10;
+    *(--stack_top) = (uint64_t)real_stack_top;
+    *(--stack_top) = 0x202;
+    *(--stack_top) = 0x08;
+    *(--stack_top) = (uint64_t)entry_point;
+
+    *(--stack_top) = 32;
+    *(--stack_top) = 0;
+
+    for (int i = 0; i < 15; i++) {
+        *(--stack_top) = 0;
+    }
+
+    proc->rsp = (uint64_t)stack_top;
+    proc->pml4_phys = create_process_pml4();
+    proc->kstack_top = (uint64_t)real_stack_top;  // ring-0-only process: this IS its kernel stack
+    proc->ustack_top = 0;                          // no separate user stack — never runs at ring 3
+    proc->next = process_list;
+    process_list = proc;
+
+    return proc;
 }
 
 #define USER_CODE_VADDR  0x400000ULL
@@ -119,46 +162,6 @@ struct process *process_create_user(void) {
     return proc;
 }
 
-struct process *process_create(void (*entry_point)(void)) {
-    struct process *proc = (struct process *)kmalloc(sizeof(struct process));
-    if (proc == NULL) {
-        return NULL;
-    }
-
-    proc->pid = next_pid++;
-    proc->state = PROCESS_READY;
-    proc->capability_count = 0;
-
-    uint8_t *stack = (uint8_t *)kmalloc(PROCESS_STACK_SIZE);
-    if (stack == NULL) {
-        kfree(proc);
-        return NULL;
-    }
-
-    uint64_t *stack_top = (uint64_t *)(stack + PROCESS_STACK_SIZE);
-    uint64_t *real_stack_top = stack_top;
-
-    *(--stack_top) = 0x10;
-    *(--stack_top) = (uint64_t)real_stack_top;
-    *(--stack_top) = 0x202;
-    *(--stack_top) = 0x08;
-    *(--stack_top) = (uint64_t)entry_point;
-
-    *(--stack_top) = 32;
-    *(--stack_top) = 0;
-
-    for (int i = 0; i < 15; i++) {
-        *(--stack_top) = 0;
-    }
-
-    proc->rsp = (uint64_t)stack_top;
-    proc->pml4_phys = create_process_pml4();
-    proc->next = process_list;
-    process_list = proc;
-
-    return proc;
-}
-
 int process_grant_capability(struct process *proc, capability_type_t type,
                               uint32_t x_min, uint32_t x_max,
                               uint32_t y_min, uint32_t y_max) {
@@ -216,10 +219,12 @@ void scheduler_run_next(void) {
     if (prev == NULL) {
         uint64_t throwaway;
         load_cr3(current_process->pml4_phys);
+        tss_set_rsp0(current_process->kstack_top);
         context_switch(&throwaway, current_process->rsp);
     } else {
         prev->state = PROCESS_READY;
         load_cr3(current_process->pml4_phys);
+        tss_set_rsp0(current_process->kstack_top);
         context_switch(&prev->rsp, current_process->rsp);
     }
 }
@@ -243,6 +248,7 @@ uint64_t schedule(uint64_t current_rsp) {
     current_process->state = PROCESS_RUNNING;
 
     load_cr3(current_process->pml4_phys);
+    tss_set_rsp0(current_process->kstack_top);
 
     return current_process->rsp;
 }

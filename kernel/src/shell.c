@@ -177,8 +177,12 @@ static void execute_command(const char *cmd) {
         process_grant_capability(p1, CAP_DRAW_REGION, 50, 70, 300, 320);
         output_print("Capability demo started: P1 drawing, P2 denied");
     } else if (str_equal(cmd, "ring3demo")) {
-        process_create_user();
-        output_print("Ring-3 process launched — watch for a keyboard LED flash");
+        struct process *p = process_create_user();
+        if (p != NULL) {
+            output_print("Ring-3 process launched — watch for a keyboard LED flash");
+        } else {
+            output_print("ring3demo FAILED: process_create_user() returned NULL (out of heap?)");
+        }
     } else if (str_equal(cmd, "clear")) {
             output_count = 0;
     } else if (str_equal(cmd, "help")) {

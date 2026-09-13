@@ -3,7 +3,7 @@
 #include "paging.h"
 
 #define HEAP_START 0xffffffff90000000ULL
-#define HEAP_INITIAL_PAGES 16  // 16 * 4KB = 64KB to start
+#define HEAP_INITIAL_PAGES 64  // 64 * 4KB = 256KB to start — 16KB was enough for ~3 processes before running out
 
 struct block_header {
     size_t size;                  // size of the USABLE memory after this header
