@@ -6,6 +6,9 @@
 #define DIRECTORY_SECTORS ((DIRECTORY_SIZE_BYTES + SECTOR_SIZE - 1) / SECTOR_SIZE)
 #define DATA_START_SECTOR (DIRECTORY_SECTOR + DIRECTORY_SECTORS)
 
+#define FILE_SLOT_SECTORS 64                              // 64 sectors = 32KB per file slot
+#define FILE_SLOT_BYTES (FILE_SLOT_SECTORS * SECTOR_SIZE)  // the actual hard cap on a single file's size
+
 static struct superblock sb;
 static struct file_entry directory[MAX_FILES];
 
@@ -91,6 +94,10 @@ int fs_create_file(const char *filename) {
     return -2; // directory full
 }
 int fs_write_file(const char *filename, const void *data, uint32_t size) {
+    if (size > FILE_SLOT_BYTES) {
+        return -3; // file too large for a single fixed-size slot — would overwrite the next file's data
+    }
+
     for (int i = 0; i < MAX_FILES; i++) {
         if (directory[i].in_use && str_equal(directory[i].filename, filename)) {
             uint32_t sectors_needed = (size + SECTOR_SIZE - 1) / SECTOR_SIZE;
@@ -99,8 +106,7 @@ int fs_write_file(const char *filename, const void *data, uint32_t size) {
             // after the directory table, at a fixed offset based on its
             // directory slot index. This avoids needing a real free-space
             // allocator for now, at the cost of wasting space between files.
-            uint32_t start_sector = DATA_START_SECTOR + (i * 64); // 64 sectors = 32KB per file slot, arbitrary but simple
-
+            uint32_t start_sector = DATA_START_SECTOR + (i * FILE_SLOT_SECTORS);
             const uint8_t *src = (const uint8_t *)data;
             for (uint32_t s = 0; s < sectors_needed; s++) {
                 uint8_t sector_buf[SECTOR_SIZE] = {0};

@@ -21,10 +21,14 @@ extern void test_process_2(void);
 #define PROMPT_Y (OUTPUT_TOP_Y + (MAX_OUTPUT_LINES * LINE_HEIGHT) + 10)
 #define PROMPT_X 10
 
+#define MAX_TEXT_CONTENT 4096   // shared cap for both writing a file and reading one back with cat
+
 static char output_lines[MAX_OUTPUT_LINES][CMD_BUFFER_SIZE];
 static int output_count = 0;
 static char writing_file[32] = {0};
 static int writing_mode = 0;
+static char writing_content[MAX_TEXT_CONTENT];
+static uint32_t writing_content_len = 0;
 
 static void clear_screen_region(uint32_t y_start, uint32_t y_end) {
     for (uint32_t row = y_start; row < y_end; row++) {
@@ -93,25 +97,48 @@ static int str_starts_with(const char *str, const char *prefix) {
 
 static void execute_command(const char *cmd) {
     if (writing_mode) {
-        if (cmd[0] == '\0') {
+        // First line, left completely blank: cancel, same as before.
+        if (writing_content_len == 0 && cmd[0] == '\0') {
             output_print("cancelled");
-        } else {
-            uint32_t len = 0;
-            while (cmd[len]) len++;
+            writing_mode = 0;
+            writing_file[0] = '\0';
+            return;
+        }
 
+        // A line containing only "." ends input and saves everything
+        // accumulated so far — classic convention (mail/ed), and it lets
+        // genuinely blank lines exist as real content, unlike treating
+        // every blank line as "done".
+        if (str_equal(cmd, ".")) {
             fs_create_file(writing_file);
-            int res = fs_write_file(writing_file, cmd, len);
+            int res = fs_write_file(writing_file, writing_content, writing_content_len);
             if (res == 0) {
                 output_print("file saved");
+            } else if (res == -3) {
+                output_print("write failed: file too large");
             } else {
                 output_print("write failed");
             }
+            writing_mode = 0;
+            writing_file[0] = '\0';
+            writing_content_len = 0;
+            return;
         }
-        writing_mode = 0;
-        writing_file[0] = '\0';
+
+        // Otherwise: append this line plus a newline, if there's room.
+        uint32_t len = 0;
+        while (cmd[len]) len++;
+
+        if (writing_content_len + len + 1 < sizeof(writing_content)) {
+            for (uint32_t k = 0; k < len; k++) {
+                writing_content[writing_content_len++] = cmd[k];
+            }
+            writing_content[writing_content_len++] = '\n';
+        } else {
+            output_print("line skipped: buffer full");
+        }
         return;
     }
-
     if (str_starts_with(cmd, "write ")) {
         const char *p = cmd + 6;
         while (*p == ' ') p++;
@@ -125,17 +152,33 @@ static void execute_command(const char *cmd) {
         }
         writing_file[fi] = '\0';
         writing_mode = 1;
-        output_print("enter text and press Enter:");
+        writing_content_len = 0;
+        output_print("enter text, '.' alone on a line to finish:");
     } else if (str_starts_with(cmd, "cat ")) {
         const char *filename = cmd + 4; // skip "cat "
-        char file_buf[256] = {0};
+        static char file_buf[MAX_TEXT_CONTENT];  // static: too big for a comfortable stack frame
         int bytes_read = fs_read_file(filename, file_buf, sizeof(file_buf) - 1);
 
         if (bytes_read < 0) {
             output_print("file not found");
-            } else {
+        } else {
             file_buf[bytes_read] = '\0';
-                output_print(file_buf); // NOTE: assumes content has no newlines for now
+
+            // Split on '\n' and print one line at a time — draw_char has
+            // no glyph for '\n', so a newline used to just vanish, running
+            // every line of a file together on one row.
+            int start = 0;
+            for (int idx = 0; idx <= bytes_read; idx++) {
+                if (file_buf[idx] == '\n' || file_buf[idx] == '\0') {
+                    char line[CMD_BUFFER_SIZE];
+                    int line_len = idx - start;
+                    if (line_len >= CMD_BUFFER_SIZE) line_len = CMD_BUFFER_SIZE - 1;
+                    for (int k = 0; k < line_len; k++) line[k] = file_buf[start + k];
+                    line[line_len] = '\0';
+                    output_print(line);
+                    start = idx + 1;
+                }
+            }
         }
     } else if (str_equal(cmd, "ls")) {
         struct file_entry entries[MAX_FILES];
